@@ -368,7 +368,6 @@ jQuery(function ($) {
         if (elt.dataset.exclude)
             $elt.data('exclude', new RegExp(elt.dataset.exclude));
         $elt.terminal(function (command) {
-                }
             }, {
                 greetings: '',
                 name: '',
