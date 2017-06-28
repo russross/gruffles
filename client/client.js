@@ -368,19 +368,14 @@ jQuery(function ($) {
         if (elt.dataset.exclude)
             $elt.data('exclude', new RegExp(elt.dataset.exclude));
         $elt.terminal(function (command) {
-            if (input)
-                $(input).focus();
+                }
             }, {
                 greetings: '',
                 name: '',
                 prompt: '',
                 historySize: 1000
             });
-        $elt.freeze();
-        $elt.on('focus', function () {
-            if (input)
-                $(input).focus();
-        });
+        $elt.freeze(true);
         outputs[i] = $elt;
     }
 
