@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"log"
@@ -8,10 +9,15 @@ import (
 	"os"
 	"runtime"
 
+	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/go-martini/martini"
+	"github.com/gorilla/sessions"
+	"github.com/martini-contrib/render"
 	"github.com/russross/meddler"
 )
 
-func startAPI(db *sql.DB) {
+func setupAPI(db *sql.DB) *http.Server {
 	// set up martini
 	r := martini.NewRouter()
 	m := martini.New()
@@ -21,7 +27,10 @@ func startAPI(db *sql.DB) {
 	m.MapTo(r, (*martini.Routes)(nil))
 	m.Action(r.Handle)
 	m.Use(render.Renderer(render.Options{IndentJSON: false}))
-	m.Use(martini.Static(Config.WWWDir, martini.StaticOptions{SkipLogging: true}))
+	m.Use(martini.Static(Config.ClientDir, martini.StaticOptions{
+		SkipLogging: true,
+		Prefix:      "play",
+	}))
 	store := sessions.NewCookieStore([]byte(Config.SessionSecret))
 	store.Options(sessions.Options{
 		Path:   "/",
@@ -117,7 +126,28 @@ func startAPI(db *sql.DB) {
 
 	// users
 	r.Post("/v1/users", withTx, CreateUser)
+	r.Get("/v1/users", auth, withTx, withCurrentUser, administratorOnly, GetUsers)
+	r.Get("/v1/users/:user_id", auth, withTx, withCurrentUser, administratorOnly, GetUser)
 	r.Get("/v1/users/me", auth, withTx, withCurrentUser, GetUserMe)
+
+	// set up letsencrypt
+	lem := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(Config.LetsEncryptCache),
+		HostPolicy: autocert.HostWhitelist(Config.Hostname),
+		Email:      Config.LetsEncryptEmail,
+	}
+
+	// start the https server
+	return &http.Server{
+		Addr:    ":https",
+		Handler: m,
+		TLSConfig: &tllls.Config{
+			PreferServerCipherSuites: true,
+			MinVersion:               tls.VersionTLS10,
+			GetCertificate:           lem.GetCertificate,
+		},
+	}
 }
 
 func loggedErrorf(f string, params ...interface{}) error {

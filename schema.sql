@@ -16,7 +16,7 @@ CREATE TABLE accounts (
     created_at                  TEXT NOT NULL,
     modified_at                 TEXT NOT NULL,
 
-    FOREIGN KEY (user_id) REFERENCES users (id)
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE sessions (
@@ -26,7 +26,7 @@ CREATE TABLE sessions (
     signed_in_at                TEXT NOT NULL,
     expires_at                  TEXT NOT NULL,
 
-    FOREIGN KEY (user_id) REFERENCES users (id)
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE RESTRICT
 );
 
 CREATE TABLE areas (
@@ -43,7 +43,7 @@ CREATE TABLE helps (
     keywords                    TEXT NOT NULL,
     help_text                   TEXT NOT NULL,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id),
+    FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
 	CHECK (level >= 0 AND level <= 100)
 );
 
@@ -70,7 +70,7 @@ CREATE TABLE mobiles (
     experience                  INTEGER NOT NULL,
     pronouns                    text NOT NULL,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id),
+    FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
 	CHECK (alignment >= -1000 AND alignment <= 1000),
 	CHECK (level >= 0 AND level <= 100),
 	CHECK (pronouns IN ("he", "she", "it", "they"))
@@ -92,7 +92,7 @@ CREATE TABLE objects (
     weight                      INTEGER NOT NULL,
     cost                        INTEGER NOT NULL,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id)
+    FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE object_extra_descriptions (
@@ -101,7 +101,7 @@ CREATE TABLE object_extra_descriptions (
     keywords                    TEXT NOT NULL,
     description                 TEXT NOT NULL,
 
-    FOREIGN KEY (object_id) REFERENCES objects (id)
+    FOREIGN KEY (object_id) REFERENCES objects (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE object_applies (
@@ -110,7 +110,7 @@ CREATE TABLE object_applies (
     apply_type                  INTEGER NOT NULL,
     value                       INTEGER NOT NULL,
 
-    FOREIGN KEY (object_id) REFERENCES objects (id)
+    FOREIGN KEY (object_id) REFERENCES objects (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE rooms (
@@ -121,7 +121,7 @@ CREATE TABLE rooms (
     flags                       INTEGER NOT NULL,
     terrain                     INTEGER NOT NULL,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id)
+    FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE doors (
@@ -134,8 +134,8 @@ CREATE TABLE doors (
     key                         INTEGER NOT NULL,
     to_room                     INTEGER NOT NULL,
 
-    FOREIGN KEY (room_id) REFERENCES rooms (id),
-    FOREIGN KEY (to_room) REFERENCES rooms (id)
+    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (to_room) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE room_extra_descriptions (
@@ -144,7 +144,7 @@ CREATE TABLE room_extra_descriptions (
     keywords                    TEXT NOT NULL,
     description                 TEXT NOT NULL,
 
-    FOREIGN KEY (room_id) REFERENCES rooms (id)
+    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE resets (
@@ -159,9 +159,9 @@ CREATE TABLE resets (
     door_direction              INTEGER,
     door_state                  INTEGER,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id),
-    FOREIGN KEY (room_id) REFERENCES rooms (id),
-    FOREIGN KEY (mobile_id) REFERENCES mobiles (id),
-    FOREIGN KEY (object_id) REFERENCES objects (id),
-    FOREIGN KEY (container_id) REFERENCES objects (id)
+    FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (mobile_id) REFERENCES mobiles (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (object_id) REFERENCES objects (id) ON DELETE CASCADE ON UPDATE CASCADE,
+    FOREIGN KEY (container_id) REFERENCES objects (id) ON DELETE CASCADE ON UPDATE CASCADE
 );

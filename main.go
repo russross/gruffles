@@ -2,19 +2,24 @@ package main
 
 import (
 	"container/heap"
+	"database/sql"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 )
 
 var Config struct {
-	Port           int
-	WWWDir         string
-	SessionSecret  string
-	CookieName     string
-	SessionSeconds int
+	Hostname         string
+	Database         string
+	LetsEncryptCache string
+	LetsEncryptEmail string
+	ClientDir        string
+	SessionSecret    string
+	CookieName       string
+	SessionSeconds   int
 }
 
 type State struct {
@@ -24,17 +29,22 @@ type State struct {
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
+
 	// load config
 	switch len(os.Args) {
 	case 1:
-		//loadConfig("/etc/gruffles/config.json")
-		Config.Port = 9001
+		loadConfig("/etc/gruffles/config.json")
 	case 2:
-		//loadConfig(os.Args[1])
+		loadConfig(os.Args[1])
 	default:
 		log.Fatalf("Usage: %s [<config file>]", os.Args[0])
 	}
-	rand.Seed(time.Now().UnixNano())
+
+	db, err := sql.Open("sqlite3", Config.Database)
+	if err != nil {
+		log.Fatalf("opening database: %v", err)
+	}
 
 	// load worlds
 	paths, err := filepath.Glob("areas/*.json")
@@ -49,8 +59,21 @@ func main() {
 
 	SetupCommands()
 
-	// start listening for connections
-	go listenForPlayerConnections(Config.Port, q)
+	// listen for player connections
+	http.HandleFunc("/server", func(w http.ResponseWriter, r *http.Request) {
+		HandleIncommingConnection(w, r, q)
+	})
+
+	// listen for API requests
+	server := setupAPI(db)
+
+	// start the server
+	go func() {
+		log.Printf("accepting https connections")
+		if err := server.ListenAndServeTLS("", ""); err != nil {
+			log.Fatalf("ListenAndServeTLS: %v", err)
+		}
+	}()
 
 	// start the main loop
 	mainEventLoop(state, q)

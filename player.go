@@ -1,11 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -62,22 +59,6 @@ func (p *Player) Send(msg Msg) {
 
 	// wake up the goroutine that delivers messages
 	p.outgoingNotEmpty.Signal()
-}
-
-func listenForPlayerConnections(port int, q Queue) {
-	wd, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-	http.Handle("/play/", http.StripPrefix("/play/", http.FileServer(http.Dir(filepath.Join(wd, "client")))))
-
-	log.Printf("listening for incoming connections on port %d", port)
-	http.HandleFunc("/server", func(w http.ResponseWriter, r *http.Request) {
-		HandleIncommingConnection(w, r, q)
-	})
-	if err = http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil); err != nil {
-		log.Printf("error listening for connections: %v", err)
-	}
 }
 
 func HandleIncommingConnection(w http.ResponseWriter, r *http.Request, q Queue) {
