@@ -5,23 +5,29 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 )
 
 type Area struct {
-	Name     string
-	Helps    []*Help
-	Mobiles  []*Mobile
-	Objects  []*Object
-	Rooms    []*Room
-	Resets   []*Reset
-	Shops    []*Shop
-	Specials []*Special
+	ID         int        `meddler:"id,pk"`
+	Name       string     `meddler:"name"`
+	Helps      []*Help    `meddler:""`
+	Mobiles    []*Mobile  `meddler:""`
+	Objects    []*Object  `meddler:""`
+	Rooms      []*Room    `meddler:""`
+	Resets     []*Reset   `meddler:""`
+	Shops      []*Shop    `meddler:""`
+	Specials   []*Special `meddler:""`
+	CreatedAt  time.Time  `meddler:"created_at"`
+	ModifiedAt time.Time  `meddler:"modified_at"`
 }
 
 type Help struct {
-	Level    int
-	Keywords string
-	Text     string
+	ID       int      `meddler:"id,pk"`
+	AreaID   int      `meddler:"area_id"`
+	Level    int      `meddler:"level"`
+	Keywords []string `meddler:"keywords,json"`
+	Text     string   `meddler:"text"`
 }
 
 type Mobile struct {

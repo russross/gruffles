@@ -10,7 +10,11 @@ import (
 )
 
 var Config struct {
-	Port int
+	Port           int
+	WWWDir         string
+	SessionSecret  string
+	CookieName     string
+	SessionSeconds int
 }
 
 type State struct {

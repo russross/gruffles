@@ -3,18 +3,28 @@ CREATE TABLE users (
     username                    TEXT NOT NULL,
     salt                        TEXT NOT NULL,
     scheme                      TEXT NOT NULL,
-    password_hash               TEXT NOT NULL
+    password_hash               TEXT NOT NULL,
     last_signed_in_at           TEXT NOT NULL,
     created_at                  TEXT NOT NULL,
-    modified_at                 TEXT NOT NULL,
+    modified_at                 TEXT NOT NULL
 );
 
 CREATE TABLE accounts (
     id                          INTEGER PRIMARY KEY,
     user_id                     INTEGER NOT NULL,
-    last_signed_in_at           TEXT NOT NULL
+    last_signed_in_at           TEXT NOT NULL,
     created_at                  TEXT NOT NULL,
     modified_at                 TEXT NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE sessions (
+    id                          INTEGER PRIMARY KEY,
+    user_id                     INTEGER NOT NULL,
+    key                         TEXT NOT NULL UNIQUE,
+    signed_in_at                TEXT NOT NULL,
+    expires_at                  TEXT NOT NULL,
 
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
@@ -33,7 +43,8 @@ CREATE TABLE helps (
     keywords                    TEXT NOT NULL,
     help_text                   TEXT NOT NULL,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id)
+    FOREIGN KEY (area_id) REFERENCES areas (id),
+	CHECK (level >= 0 AND level <= 100)
 );
 
 CREATE TABLE mobiles (
@@ -47,19 +58,22 @@ CREATE TABLE mobiles (
     affected_flags              INTEGER NOT NULL,
     alignment                   INTEGER NOT NULL,
     level                       INTEGER NOT NULL,
-    hit_roll                    INTEGER NOT NULL,
-    damage_roll                 INTEGER NOT NULL,
-    dodge_roll                  INTEGER NOT NULL,
-    absorb_roll                 INTEGER NOT NULL,
-    fire_roll                   INTEGER NOT NULL,
-    ice_roll                    INTEGER NOT NULL,
-    poison_roll                 INTEGER NOT NULL,
-    lightning_roll              INTEGER NOT NULL,
+    hit_roll                    TEXT NOT NULL,
+    damage_roll                 TEXT NOT NULL,
+    dodge_roll                  TEXT NOT NULL,
+    absorb_roll                 TEXT NOT NULL,
+    fire_roll                   TEXT NOT NULL,
+    ice_roll                    TEXT NOT NULL,
+    poison_roll                 TEXT NOT NULL,
+    lightning_roll              TEXT NOT NULL,
     gold                        INTEGER NOT NULL,
     experience                  INTEGER NOT NULL,
-    pronouns                    INTEGER NOT NULL,
+    pronouns                    text NOT NULL,
 
-    FOREIGN KEY (area_id) REFERENCES areas (id)
+    FOREIGN KEY (area_id) REFERENCES areas (id),
+	CHECK (alignment >= -1000 AND alignment <= 1000),
+	CHECK (level >= 0 AND level <= 100),
+	CHECK (pronouns IN ("he", "she", "it", "they"))
 );
 
 CREATE TABLE objects (
@@ -81,7 +95,7 @@ CREATE TABLE objects (
     FOREIGN KEY (area_id) REFERENCES areas (id)
 );
 
-CREATE TABLE extra_object_descriptions (
+CREATE TABLE object_extra_descriptions (
     id                          INTEGER PRIMARY KEY,
     object_id                   INTEGER NOT NULL,
     keywords                    TEXT NOT NULL,
@@ -124,7 +138,7 @@ CREATE TABLE doors (
     FOREIGN KEY (to_room) REFERENCES rooms (id)
 );
 
-CREATE TABLE extra_room_descriptions (
+CREATE TABLE room_extra_descriptions (
     id                          INTEGER PRIMARY KEY,
     room_id                     INTEGER NOT NULL,
     keywords                    TEXT NOT NULL,
@@ -135,7 +149,19 @@ CREATE TABLE extra_room_descriptions (
 
 CREATE TABLE resets (
     id                          INTEGER PRIMARY KEY,
-    area_id                     INTEGER NOT NULL,
     reset_type                  INTEGER NOT NULL,
+    area_id                     INTEGER NOT NULL,
+    room_id                     INTEGER,
+    mobile_id                   INTEGER,
+    object_id                   INTEGER,
+    container_id                INTEGER,
+    max_instances               INTEGER,
+    door_direction              INTEGER,
+    door_state                  INTEGER,
 
+    FOREIGN KEY (area_id) REFERENCES areas (id),
+    FOREIGN KEY (room_id) REFERENCES rooms (id),
+    FOREIGN KEY (mobile_id) REFERENCES mobiles (id),
+    FOREIGN KEY (object_id) REFERENCES objects (id),
+    FOREIGN KEY (container_id) REFERENCES objects (id)
 );

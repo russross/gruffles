@@ -2,69 +2,94 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"database/sql"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
+
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/russross/meddler"
 )
 
 type Area struct {
-	Name     string
-	Filename string `json:"-"`
-	Helps    []*Help
-	Mobiles  []*Mobile
-	Objects  []*Object
-	Rooms    []*Room
-	Resets   []*Reset
-	Shops    []*Shop
-	Specials []*Special
+	ID         int        `meddler:"id"`
+	Name       string     `meddler:"name"`
+	Helps      []*Help    `meddler:"-"`
+	Mobiles    []*Mobile  `meddler:"-"`
+	Objects    []*Object  `meddler:"-"`
+	Rooms      []*Room    `meddler:"-"`
+	Resets     []*Reset   `meddler:"-"`
+	Shops      []*Shop    `meddler:"-"`
+	Specials   []*Special `meddler:"-"`
+	CreatedAt  time.Time  `meddler:"created_at"`
+	ModifiedAt time.Time  `meddler:"modified_at"`
+	Filename   string     `meddler:"-" json:"-"`
 }
 
 type Help struct {
-	Level    int
-	Keywords string
-	Text     string
+	ID       int      `meddler:"id,pk"`
+	AreaID   int      `meddler:"area_id"`
+	Level    int      `meddler:"level"`
+	Keywords []string `meddler:"keywords,json"`
+	Text     string   `meddler:"help_text"`
 }
 
 type Mobile struct {
-	ID                                  int
-	Keywords                            string
-	ShortDescription                    string
-	LongDescription                     string
-	Description                         string
-	ActFlags, AffectedFlags, Alignment  int
-	Level, Hitroll, Armor               int
-	HitNumberDice, HitSizeDice, HitPlus int
-	DamNumberDice, DamSizeDice, DamPlus int
-	Gold, Experience                    int
-	Position1, Position2, Sex           int
-}
-
-type Extra struct {
-	Keywords    string
-	Description string
-}
-
-type Apply struct {
-	Type  int
-	Value int
+	ID               int      `meddler:"id"`
+	AreaID           int      `meddler:"area_id"`
+	Keywords         []string `meddler:"keywords,json"`
+	ShortDescription string   `meddler:"short_description"`
+	LongDescription  string   `meddler:"long_description"`
+	Description      string   `meddler:"description"`
+	ActionFlags      int      `meddler:"action_flags"`
+	AffectedFlags    int      `meddler:"affected_flags"`
+	Alignment        int      `meddler:"alignment"`
+	Level            int      `meddler:"level"`
+	HitRoll          []int    `meddler:"hit_roll,json"`
+	DamageRoll       []int    `meddler:"damage_roll,json"`
+	DodgeRoll        []int    `meddler:"dodge_roll,json"`
+	AbsorbRoll       []int    `meddler:"absorb_roll,json"`
+	FireRoll         []int    `meddler:"fire_roll,json"`
+	IceRoll          []int    `meddler:"ice_roll,json"`
+	PoisonRoll       []int    `meddler:"poison_roll,json"`
+	LightningRoll    []int    `meddler:"lightning_roll,json"`
+	Gold             int      `meddler:"gold"`
+	Experience       int      `meddler:"experience"`
+	Pronouns         string   `meddler:"pronouns"`
 }
 
 type Object struct {
-	ID                              int
-	Keywords                        string
-	ShortDescription                string
-	LongDescription                 string
-	ActionDescription               string
-	ItemType, ExtraFlags, WearFlags int
-	Value0, Value1, Value2, Value3  int
-	Weight, Cost, CostPerDay        int
-	Extras                          []Extra
-	Applies                         []Apply
+	ID               int                      `meddler:"id"`
+	Keywords         []string                 `meddler:"keywords,json"`
+	ShortDescription string                   `meddler:"short_description"`
+	LongDescription  string                   `meddler:"long_description"`
+	ItemType         int                      `meddler:"item_type"`
+	ExtraFlags       int                      `meddler:"extra_flags"`
+	WearFlags        int                      `meddler:"wear_flags"`
+	Value0           int                      `meddler:"value_0"`
+	Value1           int                      `meddler:"value_1"`
+	Value2           int                      `meddler:"value_2"`
+	Value3           int                      `meddler:"value_3"`
+	Weight           int                      `meddler:"weight"`
+	Cost             int                      `meddler:"cost"`
+	Extras           []ObjectExtraDescription `meddler:"extra,json"`
+	Applies          []ObjectApply            `meddler:"applies,json"`
+}
+
+type ObjectExtraDescription struct {
+	Keywords    []string `json:"keywords"`
+	Description string   `json:"description"`
+}
+
+type ObjectApply struct {
+	Type  int `json:"type"`
+	Value int `json:"value"`
 }
 
 type Door struct {
@@ -214,6 +239,13 @@ func main() {
 		}
 	}
 
+	db, err := sql.Open("sqlite3", "gruffles.db")
+	if err != nil {
+		log.Fatalf("opening db: %v", err)
+	}
+	defer db.Close()
+	now := time.Now()
+
 	count := make(map[string]int)
 	for _, elt := range areas {
 		filename := elt.Filename
@@ -221,15 +253,22 @@ func main() {
 		if n := count[filename]; n > 1 {
 			filename += "." + strconv.Itoa(n)
 		}
-		filename += ".json"
-		raw, err := json.MarshalIndent(elt, "", "    ")
-		if err != nil {
-			log.Fatalf("json error: %v", err)
-		}
-		if err = ioutil.WriteFile(filename, raw, 0644); err != nil {
-			log.Fatalf("error writing %s: %v", filename, err)
-		}
+		elt.CreatedAt = now
+		elt.ModifiedAt = now
+		writeAreaSQL(db, elt)
+
+		/*
+			filename += ".json"
+			raw, err := json.MarshalIndent(elt, "", "    ")
+			if err != nil {
+				log.Fatalf("json error: %v", err)
+			}
+			if err = ioutil.WriteFile(filename, raw, 0644); err != nil {
+				log.Fatalf("error writing %s: %v", filename, err)
+			}
+		*/
 	}
+
 }
 
 func (in *input) parseHeader() string {
@@ -393,7 +432,7 @@ func parseHelps(in *input) []*Help {
 		text := in.parseString()
 		help := &Help{
 			Level:    level,
-			Keywords: keywords,
+			Keywords: parseKeywords(keywords),
 			Text:     text,
 		}
 		helps = append(helps, help)
@@ -413,7 +452,7 @@ func parseMobiles(in *input) []*Mobile {
 		short := in.parseString()
 		long := in.parseString()
 		desc := in.parseString()
-		actFlags := in.parseNumber()
+		actionFlags := in.parseNumber()
 		affFlags := in.parseNumber()
 		alignment := in.parseNumber()
 		in.expectLetter("S")
@@ -442,33 +481,32 @@ func parseMobiles(in *input) []*Mobile {
 		exp := in.parseNumber()
 		position1 := in.parseNumber()
 		position2 := in.parseNumber()
-		sex := in.parseNumber()
+		sex := []string{"it", "he", "she"}[in.parseNumber()]
 
 		mob := &Mobile{
 			ID:               id,
-			Keywords:         keywords,
+			Keywords:         parseKeywords(keywords),
 			ShortDescription: short,
 			LongDescription:  long,
 			Description:      desc,
-			ActFlags:         actFlags,
+			ActionFlags:      actionFlags,
 			AffectedFlags:    affFlags,
 			Alignment:        alignment,
 			Level:            level,
-			Hitroll:          hitroll,
-			Armor:            armor,
-			HitNumberDice:    hitNumberDice,
-			HitSizeDice:      hitSizeDice,
-			HitPlus:          hitPlus,
-			DamNumberDice:    damNumberDice,
-			DamSizeDice:      damSizeDice,
-			DamPlus:          damPlus,
+			HitRoll:          makeRoll(hitNumberDice, hitSizeDice, hitPlus),
+			DamageRoll:       makeRoll(damNumberDice, damSizeDice, damPlus),
+			DodgeRoll:        makeRoll(0, 0, 0),
+			AbsorbRoll:       makeRoll(0, 0, 0),
+			FireRoll:         makeRoll(0, 0, 0),
+			IceRoll:          makeRoll(0, 0, 0),
+			PoisonRoll:       makeRoll(0, 0, 0),
+			LightningRoll:    makeRoll(0, 0, 0),
 			Gold:             gold,
 			Experience:       exp,
-			Position1:        position1,
-			Position2:        position2,
-			Sex:              sex,
+			Pronouns:         sex,
 		}
 		mobiles = append(mobiles, mob)
+		_, _, _, _ = hitroll, armor, position1, position2
 	}
 	return mobiles
 }
@@ -654,4 +692,78 @@ loop:
 		}
 	}
 	return specials
+}
+
+func parseKeywords(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []string{}
+	}
+	if len(s) > 1 && strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'") {
+		s = strings.TrimSpace(s[1 : len(s)-2])
+	}
+	out := []string{}
+	for _, elt := range strings.Fields(s) {
+		out = append(out, strings.ToLower(elt))
+	}
+	return out
+}
+
+func makeRoll(dice, faces, plus int) []int {
+	if dice < 0 || faces < 0 || plus < 0 {
+		log.Fatalf("makeRoll: invalid inputs: dice=%d, faces=%d, plus=%d",
+			dice, faces, plus)
+	}
+	mean := float64(dice)*float64(faces+1)/2.0 + float64(plus)
+	stddev := math.Sqrt(float64(dice*(faces*faces-1)) / 12.0)
+	meanInt := int(100.0*mean + 0.5)
+	stddevInt := int(100.0*stddev + 0.5)
+
+	return []int{meanInt, stddevInt}
+}
+
+func writeAreaSQL(db *sql.DB, area *Area) {
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatalf("starting transaction: %v", err)
+	}
+	defer tx.Commit()
+
+	// save the area
+	log.Printf("saving area %s", area.Name)
+	if len(area.Rooms) > 0 {
+		area.ID = area.Rooms[0].ID / 100
+	} else {
+		log.Fatalf("area %d (file %q) has no rooms", area.Name, area.Filename)
+	}
+	if err = meddler.Insert(tx, "areas", area); err != nil {
+		log.Fatalf("insert area: %v", err)
+	}
+
+	// save the helps
+	if len(area.Helps) > 0 {
+		log.Printf("saving %d helps", len(area.Helps))
+	}
+	for _, help := range area.Helps {
+		help.AreaID = area.ID
+		if err = meddler.Insert(tx, "helps", help); err != nil {
+			log.Fatalf("insert help: %v", err)
+		}
+	}
+
+	// save the mobs
+	if len(area.Mobiles) > 0 {
+		log.Printf("saving %d mobiles", len(area.Mobiles))
+	}
+	for _, mob := range area.Mobiles {
+		mob.AreaID = area.ID
+		if err = meddler.Insert(tx, "mobiles", mob); err != nil {
+			log.Fatalf("insert mobile: %v", err)
+		}
+	}
+
+	// save the objects
+	if len(area.Objects) > 0 {
+		log.Printf("saving %d objects", len(area.Objects))
+	}
 }
