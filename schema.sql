@@ -1,6 +1,8 @@
 CREATE TABLE users (
     id                          INTEGER PRIMARY KEY,
     username                    TEXT NOT NULL,
+	admin						INTEGER NOT NULL,
+	author						INTEGER NOT NULL,
     salt                        TEXT NOT NULL,
     scheme                      TEXT NOT NULL,
     password_hash               TEXT NOT NULL,
@@ -22,7 +24,7 @@ CREATE TABLE accounts (
 CREATE TABLE sessions (
     id                          INTEGER PRIMARY KEY,
     user_id                     INTEGER NOT NULL,
-    key                         TEXT NOT NULL UNIQUE,
+	signed_in_from				TEXT NOT NULL,
     signed_in_at                TEXT NOT NULL,
     expires_at                  TEXT NOT NULL,
 

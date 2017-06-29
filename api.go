@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/go-martini/martini"
-	"github.com/gorilla/sessions"
+	mgzip "github.com/martini-contrib/gzip"
 	"github.com/martini-contrib/render"
 	"github.com/russross/meddler"
 )
@@ -21,23 +22,17 @@ func setupAPI(db *sql.DB) *http.Server {
 	// set up martini
 	r := martini.NewRouter()
 	m := martini.New()
-	m.Logger(log.New(os.Stderr, "", log.LstdFlags))
-	m.User(martini.Logger())
+	m.Logger(log.New(os.Stderr, "", log.Lshortfile))
+	m.Use(martini.Logger())
 	m.Use(martini.Recovery())
 	m.MapTo(r, (*martini.Routes)(nil))
 	m.Action(r.Handle)
-	m.Use(render.Renderer(render.Options{IndentJSON: false}))
+	m.Use(mgzip.All())
 	m.Use(martini.Static(Config.ClientDir, martini.StaticOptions{
 		SkipLogging: true,
 		Prefix:      "play",
 	}))
-	store := sessions.NewCookieStore([]byte(Config.SessionSecret))
-	store.Options(sessions.Options{
-		Path:   "/",
-		Secure: true,
-		MaxAge: Config.SessionSeconds,
-	})
-	m.Use(session.Sessions(Config.CookieName, store))
+	m.Use(render.Renderer(render.Options{IndentJSON: true}))
 
 	withTx := func(c martini.Context, w http.ResponseWriter) {
 		// start a transaction
@@ -70,30 +65,30 @@ func setupAPI(db *sql.DB) *http.Server {
 	}
 
 	// martini service: to require an active logged-in session
-	auth := func(w http.ResponseWriter, session sessions.Session) {
-		if userID := session.Get("id"); userID == nil {
-			loggedHTTPErrorf(w, http.StatusUnauthorized, "authentication: no user ID found in session")
+	auth := func(w http.ResponseWriter, r *http.Request) {
+		_, err := GetSession(r)
+		if err != nil {
+			loggedHTTPErrorf(w, http.StatusUnauthorized, "authentication failed: try logging in again")
+			log.Printf("%v", err)
 			return
 		}
 	}
 
 	// martini service: include the current logged-in user (requires withTx and auth)
-	withCurrentUser := func(c martini.Context, w http.ResponseWriter, tx *sql.Tx, session sessions.Session) {
-		rawID := session.Get("id")
-		if rawID == nil {
-			loggedHTTPErrorf(w, http.StatusInternalServerError, "cannot find user ID in session")
-			return
-		}
-		userID, ok := rawID.(int64)
-		if !ok {
-			session.Clear()
-			loggedHTTPErrorf(w, http.StatusInternalServerError, "error extracting user ID from session")
+	withCurrentUser := func(c martini.Context, w http.ResponseWriter, r *http.Request, tx *sql.Tx) {
+		session, err := GetSession(r)
+		if err != nil {
+			loggedHTTPErrorf(w, http.StatusUnauthorized, "authentication failed: try logging in again")
+			log.Printf("%v", err)
 			return
 		}
 
 		// load the user record
+		userID := session.UserID
 		user := new(User)
 		if err := meddler.Load(tx, "users", user, userID); err != nil {
+			session.Delete(w)
+
 			if err == sql.ErrNoRows {
 				loggedHTTPErrorf(w, http.StatusUnauthorized, "user %d not found", userID)
 				return
@@ -119,7 +114,7 @@ func setupAPI(db *sql.DB) *http.Server {
 			return
 		}
 		if !currentUser.Author {
-			loggedHTTPErrorf(w, http.StatusUnauthorized, "user %d (%s) is not an author", currentUser.ID, currentUser.Name)
+			loggedHTTPErrorf(w, http.StatusUnauthorized, "user %d (%s) is not an author", currentUser.ID, currentUser.Username)
 			return
 		}
 	}
@@ -142,7 +137,7 @@ func setupAPI(db *sql.DB) *http.Server {
 	return &http.Server{
 		Addr:    ":https",
 		Handler: m,
-		TLSConfig: &tllls.Config{
+		TLSConfig: &tls.Config{
 			PreferServerCipherSuites: true,
 			MinVersion:               tls.VersionTLS10,
 			GetCertificate:           lem.GetCertificate,
@@ -187,4 +182,11 @@ func logPrefix() string {
 		prefix = fmt.Sprintf("%s:%d: ", file, line)
 	}
 	return prefix
+}
+
+func unBase64(s string) string {
+	if raw, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return string(raw)
+	}
+	return s
 }

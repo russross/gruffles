@@ -3,23 +3,27 @@ package main
 import (
 	"container/heap"
 	"database/sql"
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/russross/meddler"
 )
 
 var Config struct {
-	Hostname         string
-	Database         string
-	LetsEncryptCache string
-	LetsEncryptEmail string
-	ClientDir        string
-	SessionSecret    string
-	CookieName       string
-	SessionSeconds   int
+	Hostname         string `json:"hostname"`
+	Database         string `json:"database"`
+	LetsEncryptCache string `json:"letsEncryptCache"`
+	LetsEncryptEmail string `json:"letsEncryptEmail"`
+	ClientDir        string `json:"clientDir"`
+	SessionSecret    string `json:"sessionSecret"`
+	SessionSeconds   int    `json:"sessionSeconds"`
+	CookieName       string `json:"cookieName"`
 }
 
 type State struct {
@@ -32,16 +36,43 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	// load config
+	var configFile string
 	switch len(os.Args) {
 	case 1:
-		loadConfig("/etc/gruffles/config.json")
+		configFile = "/etc/gruffles/config.json"
 	case 2:
-		loadConfig(os.Args[1])
+		configFile = os.Args[1]
 	default:
 		log.Fatalf("Usage: %s [<config file>]", os.Args[0])
 	}
+	Config.LetsEncryptCache = "/etc/gruffles"
+	if raw, err := ioutil.ReadFile(configFile); err != nil {
+		log.Fatalf("loading config file: %v", err)
+	} else if err := json.Unmarshal(raw, &Config); err != nil {
+		log.Fatalf("parsing config file: %v", err)
+	}
+	Config.SessionSecret = unBase64(Config.SessionSecret)
+	Config.CookieName = "gruffles"
+	Config.SessionSeconds = 90*24*60*60 - 3*60*60
+	if Config.Hostname == "" {
+		log.Fatalf("cannot run with no hostname in the config file")
+	}
+	if Config.Database == "" {
+		log.Fatalf("cannot run with no database path in the config file")
+	}
+	if Config.LetsEncryptEmail == "" {
+		log.Fatalf("cannot run with no letsEncryptEmail in the config file")
+	}
+	if Config.ClientDir == "" {
+		log.Fatalf("cannot run with no clientDir in the config file")
+	}
+	if Config.SessionSecret == "" {
+		log.Fatalf("cannot run with no sessionSeconds in the config file")
+	}
 
-	db, err := sql.Open("sqlite3", Config.Database)
+	meddler.Default = meddler.SQLite
+	dbPath := Config.Database + "?_busy_timeout=10000&_loc=auto&_foreign_keys=1"
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatalf("opening database: %v", err)
 	}
