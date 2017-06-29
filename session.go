@@ -31,7 +31,6 @@ func NewSession(r *http.Request, userID int64) (*Session, error) {
 		}
 		client = host
 	}
-	expires := now.Add(time.Duration(Config.SessionSeconds) * time.Second)
 	return &Session{
 		UserID:       userID,
 		SignedInFrom: client,

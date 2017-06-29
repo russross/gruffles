@@ -1,6 +1,6 @@
 CREATE TABLE users (
     id                          INTEGER PRIMARY KEY,
-    username                    TEXT NOT NULL,
+    username                    TEXT NOT NULL UNIQUE,
 	admin						INTEGER NOT NULL,
 	author						INTEGER NOT NULL,
     salt                        TEXT NOT NULL,

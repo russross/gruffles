@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/go-martini/martini"
+	"github.com/martini-contrib/binding"
 	mgzip "github.com/martini-contrib/gzip"
 	"github.com/martini-contrib/render"
 	"github.com/russross/meddler"
@@ -120,10 +121,11 @@ func setupAPI(db *sql.DB) *http.Server {
 	}
 
 	// users
-	r.Post("/v1/users", withTx, CreateUser)
-	r.Get("/v1/users", auth, withTx, withCurrentUser, administratorOnly, GetUsers)
-	r.Get("/v1/users/:user_id", auth, withTx, withCurrentUser, administratorOnly, GetUser)
-	r.Get("/v1/users/me", auth, withTx, withCurrentUser, GetUserMe)
+	_, _, _, _ = auth, authorOnly, administratorOnly, withCurrentUser
+	r.Post("/v1/users", withTx, binding.Json(User{}), CreateUser)
+	//r.Get("/v1/users", auth, withTx, withCurrentUser, administratorOnly, GetUsers)
+	//r.Get("/v1/users/:user_id", auth, withTx, withCurrentUser, administratorOnly, GetUser)
+	//r.Get("/v1/users/me", auth, withTx, withCurrentUser, GetUserMe)
 
 	// set up letsencrypt
 	lem := autocert.Manager{
