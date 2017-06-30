@@ -1,10 +1,10 @@
 package main
 
 import (
-	"crypto/rand"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/crypto/pbkdf2"
 
+	"github.com/go-martini/martini"
 	"github.com/martini-contrib/render"
 	"github.com/russross/meddler"
 )
@@ -21,10 +22,10 @@ type User struct {
 	Username       string    `meddler:"username"`
 	Admin          bool      `meddler:"admin"`
 	Author         bool      `meddler:"author"`
-	Password       *string   `meddler:"-" json:"password,omitempty"`
-	Salt           string    `meddler:"salt" json:"-"`
+	Password       string    `meddler:"-" json:"password,omitempty"`
+	Salt           []byte    `meddler:"salt" json:"-"`
 	Scheme         string    `meddler:"scheme" json:"-"`
-	PasswordHash   string    `meddler:"password_hash" json:"-"`
+	PasswordHash   []byte    `meddler:"password_hash" json:"-"`
 	LastSignedInAt time.Time `meddler:"last_signed_in_at"`
 	CreatedAt      time.Time `meddler:"created_at"`
 	ModifiedAt     time.Time `meddler:"modified_at"`
@@ -41,19 +42,19 @@ func CreateUser(w http.ResponseWriter, r *http.Request, tx *sql.Tx, user User, r
 	}
 	user.Username = strings.TrimSpace(user.Username)
 	user.Username = strings.ToLower(user.Username)
-	if len(user.Username) == 0 || len(user.Username) > 32 {
+	if len(user.Username) < 1 || len(user.Username) > 32 {
 		loggedHTTPErrorf(w, http.StatusBadRequest, "username must be between 1 and 32 characters")
 		return
 	}
 	for _, ch := range user.Username {
-		if (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '_' {
-			loggedHTTPErrorf(w, http.StatusBadRequest, "username can contain only letters, digits, and underscores")
+		if ch <= ' ' || ch > '~' {
+			loggedHTTPErrorf(w, http.StatusBadRequest, "username can contain only printable ASCII characters")
 			return
 		}
 	}
 
 	// password must be between 12 and 256 characters
-	if user.Password == nil || len(*user.Password) < 12 || len(*user.Password) > 256 {
+	if len(user.Password) < 12 || len(user.Password) > 256 {
 		loggedHTTPErrorf(w, http.StatusBadRequest, "password must be between 12 and 256 characters")
 		return
 	}
@@ -61,15 +62,20 @@ func CreateUser(w http.ResponseWriter, r *http.Request, tx *sql.Tx, user User, r
 	user.Admin = false
 	user.Author = false
 	user.Scheme = "PBKDF2-HMAC-SHA256:64k"
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
+	user.Salt = make([]byte, 16)
+	if _, err := crand.Read(user.Salt); err != nil {
 		loggedHTTPErrorf(w, http.StatusInternalServerError, "salt error: %v", err)
 		return
 	}
-	user.Salt = base64.StdEncoding.EncodeToString(salt)
-	hash := pbkdf2.Key([]byte(*user.Password), salt, 65536, 32, sha256.New)
-	user.PasswordHash = base64.StdEncoding.EncodeToString(hash)
-	user.Password = nil
+	start := time.Now()
+	user.PasswordHash = pbkdf2.Key(
+		[]byte(user.Password),
+		user.Salt,
+		64*1024,
+		32,
+		sha256.New)
+	log.Printf("hash took %v", time.Since(start))
+	user.Password = ""
 	user.CreatedAt = now
 	user.ModifiedAt = now
 	user.LastSignedInAt = now
@@ -92,4 +98,32 @@ func CreateUser(w http.ResponseWriter, r *http.Request, tx *sql.Tx, user User, r
 		return
 	}
 	render.JSON(http.StatusOK, &user)
+}
+
+func GetUsers(w http.ResponseWriter, tx *sql.Tx, render render.Render) {
+	users := []*User{}
+	if err := meddler.QueryAll(tx, &users, `SELECT * FROM users ORDER BY id`); err != nil {
+		loggedHTTPErrorf(w, http.StatusInternalServerError, "db error: %v", err)
+		return
+	}
+	render.JSON(http.StatusOK, users)
+}
+
+func GetUser(w http.ResponseWriter, tx *sql.Tx, params martini.Params, currentUser *User, render render.Render) {
+	userID, err := parseID(w, "user_id", params["user_id"])
+	if err != nil {
+		return
+	}
+
+	user := new(User)
+	if err = meddler.Load(tx, "users", user, userID); err != nil {
+		loggedHTTPDBNotFoundError(w, err)
+		return
+	}
+
+	render.JSON(http.StatusOK, user)
+}
+
+func GetUserMe(w http.ResponseWriter, currentUser *User, render render.Render) {
+	render.JSON(http.StatusOK, currentUser)
 }

@@ -1,22 +1,22 @@
 CREATE TABLE users (
     id                          INTEGER PRIMARY KEY,
     username                    TEXT NOT NULL UNIQUE,
-	admin						INTEGER NOT NULL,
-	author						INTEGER NOT NULL,
-    salt                        TEXT NOT NULL,
+    admin                       INTEGER NOT NULL,
+    author                      INTEGER NOT NULL,
+    salt                        BLOB NOT NULL,
     scheme                      TEXT NOT NULL,
-    password_hash               TEXT NOT NULL,
-    last_signed_in_at           TEXT NOT NULL,
-    created_at                  TEXT NOT NULL,
-    modified_at                 TEXT NOT NULL
+    password_hash               BLOB NOT NULL,
+    last_signed_in_at           DATETIME NOT NULL,
+    created_at                  DATETIME NOT NULL,
+    modified_at                 DATETIME NOT NULL
 );
 
 CREATE TABLE accounts (
     id                          INTEGER PRIMARY KEY,
     user_id                     INTEGER NOT NULL,
-    last_signed_in_at           TEXT NOT NULL,
-    created_at                  TEXT NOT NULL,
-    modified_at                 TEXT NOT NULL,
+    last_signed_in_at           DATETIME NOT NULL,
+    created_at                  DATETIME NOT NULL,
+    modified_at                 DATETIME NOT NULL,
 
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -24,9 +24,9 @@ CREATE TABLE accounts (
 CREATE TABLE sessions (
     id                          INTEGER PRIMARY KEY,
     user_id                     INTEGER NOT NULL,
-	signed_in_from				TEXT NOT NULL,
-    signed_in_at                TEXT NOT NULL,
-    expires_at                  TEXT NOT NULL,
+    signed_in_from              TEXT NOT NULL,
+    signed_in_at                DATETIME NOT NULL,
+    expires_at                  DATETIME NOT NULL,
 
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE RESTRICT
 );
@@ -34,8 +34,8 @@ CREATE TABLE sessions (
 CREATE TABLE areas (
     id                          INTEGER PRIMARY KEY,
     name                        TEXT NOT NULL,
-    created_at                  TEXT NOT NULL,
-    modified_at                 TEXT NOT NULL
+    created_at                  DATETIME NOT NULL,
+    modified_at                 DATETIME NOT NULL
 );
 
 CREATE TABLE helps (
@@ -46,7 +46,7 @@ CREATE TABLE helps (
     help_text                   TEXT NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
-	CHECK (level >= 0 AND level <= 100)
+    CHECK (level >= 0 AND level <= 100)
 );
 
 CREATE TABLE mobiles (
@@ -73,9 +73,9 @@ CREATE TABLE mobiles (
     pronouns                    text NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
-	CHECK (alignment >= -1000 AND alignment <= 1000),
-	CHECK (level >= 0 AND level <= 100),
-	CHECK (pronouns IN ("he", "she", "it", "they"))
+    CHECK (alignment >= -1000 AND alignment <= 1000),
+    CHECK (level >= 0 AND level <= 100),
+    CHECK (pronouns IN ("he", "she", "it", "they"))
 );
 
 CREATE TABLE objects (

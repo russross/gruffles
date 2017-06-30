@@ -1,12 +1,23 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"database/sql"
 	"fmt"
+	"log"
+	"math/rand"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/crypto/pbkdf2"
 
 	"github.com/gorilla/securecookie"
+	"github.com/martini-contrib/render"
+	"github.com/russross/meddler"
 )
 
 type Session struct {
@@ -101,4 +112,76 @@ func (session *Session) Delete(w http.ResponseWriter) {
 		Secure:  true,
 	}
 	http.SetCookie(w, cookie)
+}
+
+func CreateSession(w http.ResponseWriter, r *http.Request, tx *sql.Tx, user User, render render.Render) {
+	now := time.Now()
+
+	// username: letters, digits, underscores, hyphens, max 32 characters
+	if !utf8.ValidString(user.Username) {
+		loggedHTTPErrorf(w, http.StatusBadRequest, "username must be valid utf-8")
+		return
+	}
+	user.Username = strings.TrimSpace(user.Username)
+	user.Username = strings.ToLower(user.Username)
+	if len(user.Username) < 1 || len(user.Username) > 32 {
+		loggedHTTPErrorf(w, http.StatusBadRequest, "username must be between 1 and 32 characters")
+		return
+	}
+	for _, ch := range user.Username {
+		if ch <= ' ' || ch > '~' {
+			loggedHTTPErrorf(w, http.StatusBadRequest, "username can contain only printable ASCII characters")
+			return
+		}
+	}
+
+	// password must be between 12 and 256 characters
+	if len(user.Password) < 12 || len(user.Password) > 256 {
+		loggedHTTPErrorf(w, http.StatusBadRequest, "password must be between 12 and 256 characters")
+		return
+	}
+
+	realUser := new(User)
+	if err := meddler.QueryRow(tx, realUser, `SELECT * FROM users WHERE username = ?`, user.Username); err != nil {
+		if err == sql.ErrNoRows {
+			time.Sleep(time.Duration(500+rand.Intn(1000)) * time.Millisecond)
+			loggedHTTPErrorf(w, http.StatusUnauthorized, "no such user")
+			return
+		}
+		loggedHTTPErrorf(w, http.StatusInternalServerError, "db error: %v", err)
+		return
+	}
+	if realUser.Scheme != "PBKDF2-HMAC-SHA256:64k" {
+		loggedHTTPErrorf(w, http.StatusInternalServerError, "unknown hash scheme")
+		return
+	}
+	start := time.Now()
+	hash := pbkdf2.Key(
+		[]byte(user.Password),
+		realUser.Salt,
+		64*1024,
+		32,
+		sha256.New)
+	log.Printf("hash took %v", time.Since(start))
+	user.Password = ""
+	if subtle.ConstantTimeCompare(hash, realUser.PasswordHash) != 1 {
+		time.Sleep(time.Duration(500+rand.Intn(1000)) * time.Millisecond)
+		loggedHTTPErrorf(w, http.StatusUnauthorized, "wrong password")
+		return
+	}
+	realUser.LastSignedInAt = now
+
+	if err := meddler.Update(tx, "users", realUser); err != nil {
+		loggedHTTPErrorf(w, http.StatusInternalServerError, "db error: %v", err)
+		return
+	}
+
+	// form a session
+	session, err := NewSession(r, realUser.ID)
+	if err != nil {
+		loggedHTTPErrorf(w, http.StatusInternalServerError, "session error: %v", err)
+		return
+	}
+	session.Save(w)
+	render.JSON(http.StatusOK, session)
 }

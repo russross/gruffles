@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 
 	"golang.org/x/crypto/acme/autocert"
 
@@ -123,9 +124,11 @@ func setupAPI(db *sql.DB) *http.Server {
 	// users
 	_, _, _, _ = auth, authorOnly, administratorOnly, withCurrentUser
 	r.Post("/v1/users", withTx, binding.Json(User{}), CreateUser)
-	//r.Get("/v1/users", auth, withTx, withCurrentUser, administratorOnly, GetUsers)
-	//r.Get("/v1/users/:user_id", auth, withTx, withCurrentUser, administratorOnly, GetUser)
-	//r.Get("/v1/users/me", auth, withTx, withCurrentUser, GetUserMe)
+	r.Get("/v1/users", auth, withTx, withCurrentUser, administratorOnly, GetUsers)
+	r.Get("/v1/users/:user_id", auth, withTx, withCurrentUser, administratorOnly, GetUser)
+	r.Get("/v1/users/me", auth, withTx, withCurrentUser, GetUserMe)
+
+	r.Post("/v1/sessions", withTx, binding.Json(User{}), CreateSession)
 
 	// set up letsencrypt
 	lem := autocert.Manager{
@@ -191,4 +194,16 @@ func unBase64(s string) string {
 		return string(raw)
 	}
 	return s
+}
+
+func parseID(w http.ResponseWriter, name, s string) (int64, error) {
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, loggedHTTPErrorf(w, http.StatusBadRequest, "error parsing %s from URL: %v", name, err)
+	}
+	if id < 1 {
+		return 0, loggedHTTPErrorf(w, http.StatusBadRequest, "invalid ID in URL: %s must be 1 or greater", name, err)
+	}
+
+	return id, nil
 }
