@@ -1,6 +1,11 @@
 package main
 
-import "time"
+import (
+	"bytes"
+	"time"
+)
+
+const RecallLocation = 3001
 
 func CmdLook(state *State, mob *Mob, cmd string) time.Duration {
 	if cmd != "" {
@@ -86,8 +91,50 @@ func CmdRecall(state *State, mob *Mob, cmd string) time.Duration {
 		return TimeToMove
 	}
 
-	mob.Location = state.Rooms[3001]
+	mob.Location = state.Rooms[RecallLocation]
 	mob.Send(MsgEnvironment, mob.Location.GetShortDescription())
 	mob.Send(MsgMap, GetMap(state, mob.Location, mob.Visited))
 	return TimeToMove
+}
+
+func (r *Room) Zone() int {
+	return r.ID / 100
+}
+
+func (r *Room) Exit(state *State, dir rune) *Room {
+	for _, door := range r.Doors {
+		exit := rune(directions[door.Door][0])
+		if exit == dir && door.ToRoom >= 0 && door.ToRoom < len(state.Rooms) {
+			return state.Rooms[door.ToRoom]
+		}
+	}
+	return nil
+}
+
+func (r *Room) GetShortDescription() string {
+	var buf bytes.Buffer
+	buf.WriteString(r.Name)
+	buf.WriteString("\nExits [")
+	for i, door := range r.Doors {
+		if i > 0 {
+			buf.WriteString(" ")
+		}
+		buf.WriteString(directions[door.Door][0:1])
+	}
+	buf.WriteString("]\n")
+	return buf.String()
+}
+
+func (r *Room) GetDescription() string {
+	var buf bytes.Buffer
+	buf.WriteString(r.Description)
+	buf.WriteString("\nExits [")
+	for i, door := range r.Doors {
+		if i > 0 {
+			buf.WriteString(" ")
+		}
+		buf.WriteString(directions[door.Door][0:1])
+	}
+	buf.WriteString("]\n")
+	return buf.String()
 }

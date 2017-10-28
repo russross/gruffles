@@ -47,6 +47,13 @@ func main() {
 	default:
 		log.Fatalf("Usage: %s [<config file>]", os.Args[0])
 	}
+	home := os.Getenv("HOME")
+	Config.Database = filepath.Join(home, "gruffles.db")
+	if gopath := os.Getenv("GOPATH"); gopath != "" {
+		Config.ClientDir = filepath.Join(gopath, "src/github.com/russross/gruffles/client")
+	} else {
+		Config.ClientDir = filepath.Join(home, "src/github.com/russross/gruffles/client")
+	}
 	Config.LetsEncryptCache = "/etc/gruffles"
 	if raw, err := ioutil.ReadFile(configFile); err != nil {
 		log.Fatalf("loading config file: %v", err)
@@ -59,14 +66,8 @@ func main() {
 	if Config.Hostname == "" {
 		log.Fatalf("cannot run with no hostname in the config file")
 	}
-	if Config.Database == "" {
-		log.Fatalf("cannot run with no database path in the config file")
-	}
 	if Config.LetsEncryptEmail == "" {
 		log.Fatalf("cannot run with no letsEncryptEmail in the config file")
-	}
-	if Config.ClientDir == "" {
-		log.Fatalf("cannot run with no clientDir in the config file")
 	}
 	if Config.SessionSecret == "" {
 		log.Fatalf("cannot run with no sessionSeconds in the config file")
@@ -271,4 +272,45 @@ func mainEventLoop(state *State, incoming <-chan Event) {
 		}
 
 	}
+}
+
+func LoadAreas(paths []string) ([]*Area, []*Room) {
+	var areas []*Area
+	var rooms []*Room
+
+	// load the raw area files
+	for _, path := range paths {
+		fp, err := os.Open(path)
+		if err != nil {
+			log.Fatalf("opening %s: %v", path, err)
+		}
+		j := json.NewDecoder(fp)
+		area := new(Area)
+		if err = j.Decode(area); err != nil {
+			log.Fatalf("decoding %s: %v", path, err)
+		}
+		fp.Close()
+		areas = append(areas, area)
+	}
+	log.Printf("loaded %d areas", len(areas))
+
+	// create a sparse slice of rooms mapping ID -> Room
+	max := 0
+	for _, area := range areas {
+		for _, room := range area.Rooms {
+			if room.ID > max {
+				max = room.ID
+			}
+		}
+	}
+	rooms = make([]*Room, max+1)
+	for _, area := range areas {
+		for _, room := range area.Rooms {
+			if rooms[room.ID] != nil {
+				log.Fatalf("duplicate room id %d found in area %q", room.ID, area.Name)
+			}
+			rooms[room.ID] = room
+		}
+	}
+	return areas, rooms
 }

@@ -17,120 +17,6 @@ import (
 	"github.com/russross/meddler"
 )
 
-type Area struct {
-	ID         int        `meddler:"id"`
-	Name       string     `meddler:"name"`
-	Helps      []*Help    `meddler:"-"`
-	Mobiles    []*Mobile  `meddler:"-"`
-	Objects    []*Object  `meddler:"-"`
-	Rooms      []*Room    `meddler:"-"`
-	Resets     []*Reset   `meddler:"-"`
-	Shops      []*Shop    `meddler:"-"`
-	Specials   []*Special `meddler:"-"`
-	CreatedAt  time.Time  `meddler:"created_at"`
-	ModifiedAt time.Time  `meddler:"modified_at"`
-	Filename   string     `meddler:"-" json:"-"`
-}
-
-type Help struct {
-	ID       int      `meddler:"id,pk"`
-	AreaID   int      `meddler:"area_id"`
-	Level    int      `meddler:"level"`
-	Keywords []string `meddler:"keywords,json"`
-	Text     string   `meddler:"help_text"`
-}
-
-type Mobile struct {
-	ID               int      `meddler:"id"`
-	AreaID           int      `meddler:"area_id"`
-	Keywords         []string `meddler:"keywords,json"`
-	ShortDescription string   `meddler:"short_description"`
-	LongDescription  string   `meddler:"long_description"`
-	Description      string   `meddler:"description"`
-	ActionFlags      int      `meddler:"action_flags"`
-	AffectedFlags    int      `meddler:"affected_flags"`
-	Alignment        int      `meddler:"alignment"`
-	Level            int      `meddler:"level"`
-	HitRoll          []int    `meddler:"hit_roll,json"`
-	DamageRoll       []int    `meddler:"damage_roll,json"`
-	DodgeRoll        []int    `meddler:"dodge_roll,json"`
-	AbsorbRoll       []int    `meddler:"absorb_roll,json"`
-	FireRoll         []int    `meddler:"fire_roll,json"`
-	IceRoll          []int    `meddler:"ice_roll,json"`
-	PoisonRoll       []int    `meddler:"poison_roll,json"`
-	LightningRoll    []int    `meddler:"lightning_roll,json"`
-	Gold             int      `meddler:"gold"`
-	Experience       int      `meddler:"experience"`
-	Pronouns         string   `meddler:"pronouns"`
-}
-
-type Object struct {
-	ID               int                      `meddler:"id"`
-	Keywords         []string                 `meddler:"keywords,json"`
-	ShortDescription string                   `meddler:"short_description"`
-	LongDescription  string                   `meddler:"long_description"`
-	ItemType         int                      `meddler:"item_type"`
-	ExtraFlags       int                      `meddler:"extra_flags"`
-	WearFlags        int                      `meddler:"wear_flags"`
-	Value0           int                      `meddler:"value_0"`
-	Value1           int                      `meddler:"value_1"`
-	Value2           int                      `meddler:"value_2"`
-	Value3           int                      `meddler:"value_3"`
-	Weight           int                      `meddler:"weight"`
-	Cost             int                      `meddler:"cost"`
-	Extras           []ObjectExtraDescription `meddler:"extra,json"`
-	Applies          []ObjectApply            `meddler:"applies,json"`
-}
-
-type ObjectExtraDescription struct {
-	Keywords    []string `json:"keywords"`
-	Description string   `json:"description"`
-}
-
-type ObjectApply struct {
-	Type  int `json:"type"`
-	Value int `json:"value"`
-}
-
-type Door struct {
-	Door               int
-	Description        string
-	Keywords           string
-	Locks, Key, ToRoom int
-}
-
-type Room struct {
-	ID                          int
-	Name                        string
-	Description                 string
-	Area, RoomFlags, SectorType int
-	Doors                       []Door
-	Extras                      []Extra
-}
-
-type Reset struct {
-	Type    string
-	IfFlag  int
-	Num1    int
-	Num2    int
-	Num3    int
-	Comment string
-}
-
-type Shop struct {
-	Keeper                                 int
-	Trade0, Trade1, Trade2, Trade3, Trade4 int
-	ProfitBuy, ProfitSell                  int
-	OpenHour, CloseHour                    int
-	Comment                                string
-}
-
-type Special struct {
-	MobID    int
-	Function string
-	Comment  string
-}
-
 type input struct {
 	data []byte
 	rest []byte
@@ -142,6 +28,7 @@ func main() {
 	}
 
 	var areas []*Area
+	filenames := make(map[*Area]string)
 	for _, filename := range os.Args[1:] {
 		basename := filename
 		if strings.HasSuffix(basename, ".are") {
@@ -174,8 +61,9 @@ func main() {
 			case "AREA":
 				name := in.parseString()
 				log.Printf("starting AREA %s", name)
-				area = &Area{Name: name, Filename: basename}
+				area = &Area{Name: name}
 				areas = append(areas, area)
+				filenames[area] = basename
 
 			case "HELPS":
 				log.Printf("starting HELPS section")
@@ -222,16 +110,16 @@ func main() {
 				if area == nil {
 					in.Failf("SHOPS found outside an area")
 				}
-				area.Shops = parseShops(in)
-				log.Printf("found %d SHOPS", len(area.Shops))
+				shops := parseShops(in)
+				log.Printf("found %d SHOPS", len(shops))
 
 			case "SPECIALS":
 				log.Printf("starting SPECIALS section")
 				if area == nil {
 					in.Failf("SPECIALS found outside an area")
 				}
-				area.Specials = parseSpecials(in)
-				log.Printf("found %d SPECIALS", len(area.Specials))
+				specials := parseSpecials(in)
+				log.Printf("found %d SPECIALS", len(specials))
 
 			default:
 				in.Failf("unimplemented section: %s", section)
@@ -246,29 +134,11 @@ func main() {
 	defer db.Close()
 	now := time.Now()
 
-	count := make(map[string]int)
 	for _, elt := range areas {
-		filename := elt.Filename
-		count[filename]++
-		if n := count[filename]; n > 1 {
-			filename += "." + strconv.Itoa(n)
-		}
 		elt.CreatedAt = now
 		elt.ModifiedAt = now
-		writeAreaSQL(db, elt)
-
-		/*
-			filename += ".json"
-			raw, err := json.MarshalIndent(elt, "", "    ")
-			if err != nil {
-				log.Fatalf("json error: %v", err)
-			}
-			if err = ioutil.WriteFile(filename, raw, 0644); err != nil {
-				log.Fatalf("error writing %s: %v", filename, err)
-			}
-		*/
+		writeAreaSQL(db, elt, filenames[elt])
 	}
-
 }
 
 func (in *input) parseHeader() string {
@@ -519,36 +389,50 @@ func parseObjects(in *input) []*Object {
 		if id == 0 {
 			break
 		}
+		keywords := parseKeywords(in.parseString())
+		shortDescription := in.parseString()
+		longDescription := in.parseString()
+		// ActionDescription
+		_ = in.parseString()
+		itemType := in.parseNumber()
+		extraFlags := in.parseNumber()
+		wearFlags := in.parseNumber()
+		value0 := in.parseNumber()
+		value1 := in.parseNumber()
+		value2 := in.parseNumber()
+		value3 := in.parseNumber()
+		weight := in.parseNumber()
+		cost := in.parseNumber()
+		// CostPerDat
+		_ = in.parseNumber()
 		obj := &Object{
-			ID:                id,
-			Keywords:          in.parseString(),
-			ShortDescription:  in.parseString(),
-			LongDescription:   in.parseString(),
-			ActionDescription: in.parseString(),
-			ItemType:          in.parseNumber(),
-			ExtraFlags:        in.parseNumber(),
-			WearFlags:         in.parseNumber(),
-			Value0:            in.parseNumber(),
-			Value1:            in.parseNumber(),
-			Value2:            in.parseNumber(),
-			Value3:            in.parseNumber(),
-			Weight:            in.parseNumber(),
-			Cost:              in.parseNumber(),
-			CostPerDay:        in.parseNumber(),
-			Extras:            []Extra{},
-			Applies:           []Apply{},
+			ID:               id,
+			Keywords:         keywords,
+			ShortDescription: shortDescription,
+			LongDescription:  longDescription,
+			ItemType:         itemType,
+			ExtraFlags:       extraFlags,
+			WearFlags:        wearFlags,
+			Value0:           value0,
+			Value1:           value1,
+			Value2:           value2,
+			Value3:           value3,
+			Weight:           weight,
+			Cost:             cost,
+			Extras:           []ObjectExtraDescription{},
+			Applies:          []ObjectApply{},
 		}
 		for {
 			if in.hasLetter("E") {
 				in.expectLetter("E")
-				extra := Extra{
-					Keywords:    in.parseString(),
+				extra := ObjectExtraDescription{
+					Keywords:    parseKeywords(in.parseString()),
 					Description: in.parseString(),
 				}
 				obj.Extras = append(obj.Extras, extra)
 			} else if in.hasLetter("A") {
 				in.expectLetter("A")
-				apply := Apply{
+				apply := ObjectApply{
 					Type:  in.parseNumber(),
 					Value: in.parseNumber(),
 				}
@@ -575,29 +459,29 @@ func parseRooms(in *input) []*Room {
 			ID:          id,
 			Name:        in.parseString(),
 			Description: in.parseString(),
-			Area:        in.parseNumber(),
-			RoomFlags:   in.parseNumber(),
-			SectorType:  in.parseNumber(),
-			Doors:       []Door{},
-			Extras:      []Extra{},
+			AreaID:      in.parseNumber(),
+			Flags:       in.parseNumber(),
+			Terrain:     in.parseNumber(),
+			Doors:       []RoomDoor{},
+			Extras:      []RoomExtraDescription{},
 		}
 	optionals:
 		for {
 			kind := in.parseLetter()
 			switch kind {
 			case "D":
-				door := Door{
-					Door:        in.parseNumber(),
+				door := RoomDoor{
+					Direction:   in.parseNumber(),
 					Description: in.parseString(),
-					Keywords:    in.parseString(),
-					Locks:       in.parseNumber(),
+					Keywords:    parseKeywords(in.parseString()),
+					Lock:        in.parseNumber(),
 					Key:         in.parseNumber(),
 					ToRoom:      in.parseNumber(),
 				}
 				room.Doors = append(room.Doors, door)
 			case "E":
-				extra := Extra{
-					Keywords:    in.parseString(),
+				extra := RoomExtraDescription{
+					Keywords:    parseKeywords(in.parseString()),
 					Description: in.parseString(),
 				}
 				room.Extras = append(room.Extras, extra)
@@ -645,6 +529,14 @@ loop:
 	return resets
 }
 
+type Shop struct {
+	Keeper                                 int
+	Trade0, Trade1, Trade2, Trade3, Trade4 int
+	ProfitBuy, ProfitSell                  int
+	OpenHour, CloseHour                    int
+	Comment                                string
+}
+
 func parseShops(in *input) []*Shop {
 	shops := []*Shop{}
 	for {
@@ -668,6 +560,12 @@ func parseShops(in *input) []*Shop {
 		shops = append(shops, shop)
 	}
 	return shops
+}
+
+type Special struct {
+	MobID    int
+	Function string
+	Comment  string
 }
 
 func parseSpecials(in *input) []*Special {
@@ -722,7 +620,7 @@ func makeRoll(dice, faces, plus int) []int {
 	return []int{meanInt, stddevInt}
 }
 
-func writeAreaSQL(db *sql.DB, area *Area) {
+func writeAreaSQL(db *sql.DB, area *Area, filename string) {
 	tx, err := db.Begin()
 	if err != nil {
 		log.Fatalf("starting transaction: %v", err)
@@ -734,7 +632,7 @@ func writeAreaSQL(db *sql.DB, area *Area) {
 	if len(area.Rooms) > 0 {
 		area.ID = area.Rooms[0].ID / 100
 	} else {
-		log.Fatalf("area %d (file %q) has no rooms", area.Name, area.Filename)
+		log.Fatalf("area %d (file %q) has no rooms", area.Name, filename)
 	}
 	if err = meddler.Insert(tx, "areas", area); err != nil {
 		log.Fatalf("insert area: %v", err)

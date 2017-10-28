@@ -378,7 +378,7 @@ jQuery(function ($) {
         outputs[i] = $elt;
     }
 
-    var url = 'ws://' + document.location.hostname + ':' + document.location.port + '/server';
+    var url = 'wss://' + document.location.hostname + ':' + document.location.port + '/server';
     console.log("connecting to " + url);
     var socket = new WebSocket(url);
     socket.onerror = function (event) {

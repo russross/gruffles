@@ -1,8 +1,8 @@
 CREATE TABLE users (
     id                          INTEGER PRIMARY KEY,
     username                    TEXT NOT NULL UNIQUE,
-    admin                       INTEGER NOT NULL,
-    author                      INTEGER NOT NULL,
+    admin                       BOOLEAN NOT NULL,
+    author                      BOOLEAN NOT NULL,
     salt                        BLOB NOT NULL,
     scheme                      TEXT NOT NULL,
     password_hash               BLOB NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE mobiles (
     lightning_roll              TEXT NOT NULL,
     gold                        INTEGER NOT NULL,
     experience                  INTEGER NOT NULL,
-    pronouns                    text NOT NULL,
+    pronouns                    TEXT NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
     CHECK (alignment >= -1000 AND alignment <= 1000),
@@ -93,26 +93,10 @@ CREATE TABLE objects (
     value_3                     INTEGER NOT NULL,
     weight                      INTEGER NOT NULL,
     cost                        INTEGER NOT NULL,
+	extras						TEXT NOT NULL,
+	applies						TEXT NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE
-);
-
-CREATE TABLE object_extra_descriptions (
-    id                          INTEGER PRIMARY KEY,
-    object_id                   INTEGER NOT NULL,
-    keywords                    TEXT NOT NULL,
-    description                 TEXT NOT NULL,
-
-    FOREIGN KEY (object_id) REFERENCES objects (id) ON DELETE CASCADE ON UPDATE CASCADE
-);
-
-CREATE TABLE object_applies (
-    id                          INTEGER PRIMARY KEY,
-    object_id                   INTEGER NOT NULL,
-    apply_type                  INTEGER NOT NULL,
-    value                       INTEGER NOT NULL,
-
-    FOREIGN KEY (object_id) REFERENCES objects (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE rooms (
@@ -122,31 +106,10 @@ CREATE TABLE rooms (
     description                 TEXT NOT NULL,
     flags                       INTEGER NOT NULL,
     terrain                     INTEGER NOT NULL,
+	doors						TEXT NOT NULL,
+	extras						TEXT NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE
-);
-
-CREATE TABLE doors (
-    id                          INTEGER PRIMARY KEY,
-    room_id                     INTEGER NOT NULL,
-    direction                   INTEGER NOT NULL,
-    description                 TEXT NOT NULL,
-    keywords                    TEXT NOT NULL,
-    lock                        INTEGER NOT NULL,
-    key                         INTEGER NOT NULL,
-    to_room                     INTEGER NOT NULL,
-
-    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE,
-    FOREIGN KEY (to_room) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE
-);
-
-CREATE TABLE room_extra_descriptions (
-    id                          INTEGER PRIMARY KEY,
-    room_id                     INTEGER NOT NULL,
-    keywords                    TEXT NOT NULL,
-    description                 TEXT NOT NULL,
-
-    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE resets (
