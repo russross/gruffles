@@ -102,7 +102,7 @@ func main() {
 				if area == nil {
 					in.Failf("RESETS found outside an area")
 				}
-				area.Resets = parseResets(in)
+				area.Resets = parseResets(in, area.ID)
 				log.Printf("found %d RESETS", len(area.Resets))
 
 			case "SHOPS":
@@ -131,13 +131,42 @@ func main() {
 	if err != nil {
 		log.Fatalf("opening db: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Fatalf("closing database: %v", err)
+		}
+	}()
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatalf("starting transaction: %v", err)
+	}
+	defer func() {
+		if err := tx.Commit(); err != nil {
+			log.Fatalf("committing transaction: %v", err)
+		}
+	}()
+
 	now := time.Now()
+	roomIDs := make(map[int]int)
+	mobIDs := make(map[int]int)
+	objectIDs := make(map[int]int)
 
 	for _, elt := range areas {
 		elt.CreatedAt = now
 		elt.ModifiedAt = now
-		writeAreaSQL(db, elt, filenames[elt])
+		log.Printf("saving area %s (file %s) with %d helps, %d rooms, %d mobs, %d objects, %d resets",
+			elt.Name, filenames[elt],
+			len(elt.Helps), len(elt.Rooms), len(elt.Mobiles), len(elt.Objects), len(elt.Resets))
+		writeAreaSQL(tx, elt)
+		writeHelpsSQL(tx, elt)
+		writeRoomsSQL(tx, elt, roomIDs)
+		writeMobsSQL(tx, elt, mobIDs)
+		writeObjectsSQL(tx, elt, objectIDs)
+	}
+	log.Printf("saving doors and resets")
+	for _, elt := range areas {
+		writeDoorsSQL(tx, elt, roomIDs, objectIDs)
+		writeResetsSQL(tx, elt, roomIDs, mobIDs, objectIDs)
 	}
 }
 
@@ -462,7 +491,7 @@ func parseRooms(in *input) []*Room {
 			AreaID:      in.parseNumber(),
 			Flags:       in.parseNumber(),
 			Terrain:     in.parseNumber(),
-			Doors:       []RoomDoor{},
+			Doors:       []Door{},
 			Extras:      []RoomExtraDescription{},
 		}
 	optionals:
@@ -470,7 +499,8 @@ func parseRooms(in *input) []*Room {
 			kind := in.parseLetter()
 			switch kind {
 			case "D":
-				door := RoomDoor{
+				door := Door{
+					RoomID:      room.ID,
 					Direction:   in.parseNumber(),
 					Description: in.parseString(),
 					Keywords:    parseKeywords(in.parseString()),
@@ -497,32 +527,65 @@ func parseRooms(in *input) []*Room {
 	return rooms
 }
 
-func parseResets(in *input) []*Reset {
+func parseResets(in *input, areaID int) []*Reset {
+	sequence := 1
 	resets := []*Reset{}
 loop:
 	for {
-		kind := in.parseLetter()
-		reset := &Reset{}
-		switch kind {
+		reset := &Reset{
+			Type:     in.parseLetter(),
+			AreaID:   areaID,
+			Sequence: sequence,
+		}
+		sequence++
+
+		switch reset.Type {
 		case "*":
-			in.parseToEOL()
-		case "M", "O", "P", "E", "D":
-			reset.Type = kind
-			reset.IfFlag = in.parseNumber()
-			reset.Num1 = in.parseNumber()
-			reset.Num2 = in.parseNumber()
-			reset.Num3 = in.parseNumber()
 			reset.Comment = in.parseToEOL()
-		case "G", "R":
-			reset.Type = kind
-			reset.IfFlag = in.parseNumber()
-			reset.Num1 = in.parseNumber()
-			reset.Num2 = in.parseNumber()
+		case "M":
+			in.parseNumber()
+			reset.MobileID = in.parseNumber()
+			reset.MaxInstances = in.parseNumber()
+			reset.RoomID = in.parseNumber()
+			reset.Comment = in.parseToEOL()
+		case "O":
+			in.parseNumber()
+			reset.ObjectID = in.parseNumber()
+			in.parseNumber()
+			reset.RoomID = in.parseNumber()
+			reset.Comment = in.parseToEOL()
+		case "P":
+			in.parseNumber()
+			reset.ObjectID = in.parseNumber()
+			in.parseNumber()
+			reset.ContainerID = in.parseNumber()
+			reset.Comment = in.parseToEOL()
+		case "E":
+			in.parseNumber()
+			reset.ObjectID = in.parseNumber()
+			in.parseNumber()
+			reset.WearLocation = in.parseNumber()
+			reset.Comment = in.parseToEOL()
+		case "D":
+			in.parseNumber()
+			reset.RoomID = in.parseNumber()
+			reset.DoorDirection = in.parseNumber()
+			reset.DoorState = in.parseNumber()
+			reset.Comment = in.parseToEOL()
+		case "G":
+			in.parseNumber()
+			reset.ObjectID = in.parseNumber()
+			in.parseNumber()
+			reset.Comment = in.parseToEOL()
+		case "R":
+			in.parseNumber()
+			reset.RoomID = in.parseNumber()
+			reset.LastDoor = in.parseNumber()
 			reset.Comment = in.parseToEOL()
 		case "S":
 			break loop
 		default:
-			in.Failf("unexpected RESET type: %q", kind)
+			in.Failf("unexpected RESET type: %q", reset.Type)
 		}
 		resets = append(resets, reset)
 	}
@@ -620,48 +683,133 @@ func makeRoll(dice, faces, plus int) []int {
 	return []int{meanInt, stddevInt}
 }
 
-func writeAreaSQL(db *sql.DB, area *Area, filename string) {
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatalf("starting transaction: %v", err)
-	}
-	defer tx.Commit()
-
-	// save the area
-	log.Printf("saving area %s", area.Name)
-	if len(area.Rooms) > 0 {
-		area.ID = area.Rooms[0].ID / 100
-	} else {
-		log.Fatalf("area %d (file %q) has no rooms", area.Name, filename)
-	}
-	if err = meddler.Insert(tx, "areas", area); err != nil {
+func writeAreaSQL(tx *sql.Tx, area *Area) {
+	area.ID = 0
+	if err := meddler.Insert(tx, "areas", area); err != nil {
 		log.Fatalf("insert area: %v", err)
 	}
+}
 
-	// save the helps
-	if len(area.Helps) > 0 {
-		log.Printf("saving %d helps", len(area.Helps))
-	}
+func writeHelpsSQL(tx *sql.Tx, area *Area) {
 	for _, help := range area.Helps {
 		help.AreaID = area.ID
-		if err = meddler.Insert(tx, "helps", help); err != nil {
+		help.ID = 0
+		if err := meddler.Insert(tx, "helps", help); err != nil {
 			log.Fatalf("insert help: %v", err)
 		}
 	}
+}
 
-	// save the mobs
-	if len(area.Mobiles) > 0 {
-		log.Printf("saving %d mobiles", len(area.Mobiles))
+func writeRoomsSQL(tx *sql.Tx, area *Area, roomIDs map[int]int) {
+	for _, room := range area.Rooms {
+		oldID := room.ID
+		room.ID = 0
+		room.AreaID = area.ID
+		if err := meddler.Insert(tx, "rooms", room); err != nil {
+			log.Fatalf("insert room: %v", err)
+		}
+		roomIDs[oldID] = room.ID
 	}
+}
+
+func writeMobsSQL(tx *sql.Tx, area *Area, mobIDs map[int]int) {
 	for _, mob := range area.Mobiles {
+		oldID := mob.ID
+		mob.ID = 0
 		mob.AreaID = area.ID
-		if err = meddler.Insert(tx, "mobiles", mob); err != nil {
+		if err := meddler.Insert(tx, "mobiles", mob); err != nil {
 			log.Fatalf("insert mobile: %v", err)
 		}
+		mobIDs[oldID] = mob.ID
 	}
+}
 
-	// save the objects
-	if len(area.Objects) > 0 {
-		log.Printf("saving %d objects", len(area.Objects))
+func writeObjectsSQL(tx *sql.Tx, area *Area, objectIDs map[int]int) {
+	for _, object := range area.Objects {
+		oldID := object.ID
+		object.ID = 0
+		object.AreaID = area.ID
+		if err := meddler.Insert(tx, "objects", object); err != nil {
+			log.Fatalf("insert object: %v", err)
+		}
+		objectIDs[oldID] = object.ID
+	}
+}
+
+func writeDoorsSQL(tx *sql.Tx, area *Area, roomIDs, objectIDs map[int]int) {
+	for _, room := range area.Rooms {
+		for _, door := range room.Doors {
+			door.RoomID = room.ID
+			if door.Key != 0 {
+				if _, exists := objectIDs[door.Key]; exists {
+					door.Key = objectIDs[door.Key]
+				} else {
+					if door.Key > 0 {
+						log.Printf("door from area %s requires key %d that does not exist",
+							area.Name, door.Key)
+					}
+					door.Key = 0
+				}
+			}
+			if door.ToRoom != 0 {
+				if _, exists := roomIDs[door.ToRoom]; exists {
+					door.ToRoom = roomIDs[door.ToRoom]
+				} else {
+					log.Printf("room from area %s has door to non-existent room %d",
+						area.Name, door.ToRoom)
+					door.ToRoom = 0
+				}
+			}
+			door.ID = 0
+			if err := meddler.Insert(tx, "doors", &door); err != nil {
+				log.Fatalf("insert door: %v", err)
+			}
+		}
+	}
+}
+
+func writeResetsSQL(tx *sql.Tx, area *Area, roomIDs, mobIDs, objectIDs map[int]int) {
+	for _, reset := range area.Resets {
+		reset.ID = 0
+		reset.AreaID = area.ID
+		if reset.RoomID != 0 {
+			if _, exists := roomIDs[reset.RoomID]; exists {
+				reset.RoomID = roomIDs[reset.RoomID]
+			} else {
+				log.Printf("area %s has a reset for room %d that does not exist",
+					area.Name, reset.RoomID)
+				reset.RoomID = 0
+			}
+		}
+		if reset.MobileID != 0 {
+			if _, exists := mobIDs[reset.MobileID]; exists {
+				reset.MobileID = mobIDs[reset.MobileID]
+			} else {
+				log.Printf("area %s has a reset for mobile %d that does not exist",
+					area.Name, reset.MobileID)
+				reset.MobileID = 0
+			}
+		}
+		if reset.ObjectID != 0 {
+			if _, exists := objectIDs[reset.ObjectID]; exists {
+				reset.ObjectID = objectIDs[reset.ObjectID]
+			} else {
+				log.Printf("area %s has a reset for object %d that does not exist",
+					area.Name, reset.ObjectID)
+				reset.ObjectID = 0
+			}
+		}
+		if reset.ContainerID != 0 {
+			if _, exists := objectIDs[reset.ContainerID]; exists {
+				reset.ContainerID = objectIDs[reset.ContainerID]
+			} else {
+				log.Printf("area %s has a reset for container object %d that does not exist",
+					area.Name, reset.ContainerID)
+				reset.ContainerID = 0
+			}
+		}
+		if err := meddler.Insert(tx, "resets", reset); err != nil {
+			log.Fatalf("insert reset: %v", err)
+		}
 	}
 }

@@ -93,8 +93,8 @@ CREATE TABLE objects (
     value_3                     INTEGER NOT NULL,
     weight                      INTEGER NOT NULL,
     cost                        INTEGER NOT NULL,
-	extras						TEXT NOT NULL,
-	applies						TEXT NOT NULL,
+    extras                      TEXT NOT NULL,
+    applies                     TEXT NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -106,23 +106,40 @@ CREATE TABLE rooms (
     description                 TEXT NOT NULL,
     flags                       INTEGER NOT NULL,
     terrain                     INTEGER NOT NULL,
-	doors						TEXT NOT NULL,
-	extras						TEXT NOT NULL,
+    extras                      TEXT NOT NULL,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE TABLE doors (
+	id							INTEGER PRIMARY KEY,
+	room_id						INTEGER NOT NULL,
+	direction					INTEGER NOT NULL,
+	description					TEXT NOT NULL,
+	keywords 					TEXT NOT NULL,
+	lock						INTEGER,
+	key							INTEGER,
+	to_room						INTEGER,
+
+	FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE,
+	FOREIGN KEY (to_room) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 CREATE TABLE resets (
     id                          INTEGER PRIMARY KEY,
-    reset_type                  INTEGER NOT NULL,
+    reset_type                  TEXT NOT NULL,
     area_id                     INTEGER NOT NULL,
+    sequence                    INTEGER NOT NULL,
     room_id                     INTEGER,
     mobile_id                   INTEGER,
     object_id                   INTEGER,
     container_id                INTEGER,
+    wear_location               INTEGER,
     max_instances               INTEGER,
     door_direction              INTEGER,
     door_state                  INTEGER,
+    last_door                   INTEGER,
+    comment                     TEXT,
 
     FOREIGN KEY (area_id) REFERENCES areas (id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE ON UPDATE CASCADE,

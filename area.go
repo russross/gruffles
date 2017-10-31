@@ -49,7 +49,8 @@ type Mobile struct {
 }
 
 type Object struct {
-	ID               int                      `meddler:"id"`
+	ID               int                      `meddler:"id,pk"`
+	AreaID           int                      `meddler:"area_id"`
 	Keywords         []string                 `meddler:"keywords,json"`
 	ShortDescription string                   `meddler:"short_description"`
 	LongDescription  string                   `meddler:"long_description"`
@@ -62,7 +63,7 @@ type Object struct {
 	Value3           int                      `meddler:"value_3"`
 	Weight           int                      `meddler:"weight"`
 	Cost             int                      `meddler:"cost"`
-	Extras           []ObjectExtraDescription `meddler:"extra,json"`
+	Extras           []ObjectExtraDescription `meddler:"extras,json"`
 	Applies          []ObjectApply            `meddler:"applies,json"`
 }
 
@@ -83,17 +84,19 @@ type Room struct {
 	Description string                 `meddler:"description"`
 	Flags       int                    `meddler:"flags"`
 	Terrain     int                    `meddler:"terrain"`
-	Doors       []RoomDoor             `meddler:"doors,json"`
 	Extras      []RoomExtraDescription `meddler:"extras,json"`
+	Doors       []Door                 `meddler:"-"`
 }
 
-type RoomDoor struct {
-	Direction   int      `json:"direction"`
-	Description string   `json:"description"`
-	Keywords    []string `json:"keywords"`
-	Lock        int      `json:"lock"`
-	Key         int      `json:"key"`
-	ToRoom      int      `json:"toRoom"`
+type Door struct {
+	ID          int      `meddler:"id,pk"`
+	RoomID      int      `meddler:"room_id"`
+	Direction   int      `meddler:"direction"`
+	Description string   `meddler:"description"`
+	Keywords    []string `meddler:"keywords,json"`
+	Lock        int      `meddler:"lock,zeroisnull"`
+	Key         int      `meddler:"key,zeroisnull"`
+	ToRoom      int      `meddler:"to_room"`
 }
 
 type RoomExtraDescription struct {
@@ -105,11 +108,15 @@ type Reset struct {
 	ID            int    `meddler:"id,pk"`
 	Type          string `meddler:"reset_type"`
 	AreaID        int    `meddler:"area_id"`
+	Sequence      int    `meddler:"sequence"`
 	RoomID        int    `meddler:"room_id,zeroisnull"`
 	MobileID      int    `meddler:"mobile_id,zeroisnull"`
 	ObjectID      int    `meddler:"object_id,zeroisnull"`
 	ContainerID   int    `meddler:"container_id,zeroisnull"`
+	WearLocation  int    `meddler:"wear_location,zeroisnull"`
 	MaxInstances  int    `meddler:"max_instances,zeroisnull"`
 	DoorDirection int    `meddler:"door_direction"`
 	DoorState     int    `meddler:"door_state"`
+	LastDoor      int    `meddler:"last_door"`
+	Comment       string `meddler:"comment"`
 }
